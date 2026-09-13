@@ -14,7 +14,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 import db
-from parser import ParseError, parse_entry
+from parser import ParseError, parse_debt_add, parse_debt_close, parse_entry, qarz_xabarimi
 
 load_dotenv()
 
@@ -26,21 +26,24 @@ logger = logging.getLogger(__name__)
 
 XABAR_START = (
     "Assalomu alaykum! Men sizning moliyaviy kotibingizman.\n\n"
-    "Hozircha oddiy matn orqali kirim/chiqim yozib borishimiz mumkin:\n"
+    "Hozircha oddiy matn orqali kirim/chiqim va qarzlarni yozib borishimiz mumkin:\n"
     "  kirim 3 million Ish haqi\n"
-    "  chiqim 50 ming Taksi\n\n"
-    "Oxirgi yozuvlaringizni ko'rish uchun /royxat buyrug'ini yuboring."
+    "  chiqim 50 ming Taksi\n"
+    "  qarz berdim Aliyev 500 ming 2 oydan keyin\n\n"
+    "To'liq yo'riqnoma uchun /help, oxirgi yozuvlar uchun /royxat buyrug'ini yuboring."
 )
 
 XABAR_YORDAM = (
-    "Yozuv qo'shish uchun quyidagi shaklda yozing:\n"
+    "📝 Kirim/chiqim yozish:\n"
     "  kirim <summa> <tavsif>\n"
-    "  chiqim <summa> <tavsif>\n\n"
-    "Misollar:\n"
-    "  chiqim 50 ming taksi\n"
-    "  kirim 3 million ish haqi\n"
-    "  chiqim 20000 nonushta\n\n"
-    "Boshqa buyruqlar: /balans, /qarzlar, /hisobot, /hisobot <oy_nomi>, /royxat"
+    "  chiqim <summa> <tavsif>\n"
+    "Misollar: 'chiqim 50 ming taksi', 'kirim 3 million ish haqi'\n\n"
+    "🤝 Qarz yozish (ism bitta so'z bo'lsin):\n"
+    "  qarz berdim <ism> <summa> [muddat]   — kimgadir qarz berdingiz\n"
+    "  qarz oldim <ism> <summa> [muddat]    — kimdandir qarz oldingiz\n"
+    "  qarz yopildi <ism>                   — shu ism bilan ochiq qarzni yopadi\n"
+    "Misollar: 'qarz berdim Aliyev 500 ming 2 oydan keyin', 'qarz yopildi Aliyev'\n\n"
+    "📊 Boshqa buyruqlar: /balans, /qarzlar, /hisobot, /hisobot <oy_nomi>, /royxat"
 )
 
 OY_NOMLARI = {
@@ -162,9 +165,47 @@ async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def qarz_xabarini_qayta_ishlash(update: Update, user_id: int, text: str) -> None:
+    tokens = text.strip().split()
+    ikkinchi_soz = tokens[1].lower() if len(tokens) > 1 else ""
+
+    if ikkinchi_soz == "yopildi":
+        try:
+            ism = parse_debt_close(text)
+        except ParseError as e:
+            await update.message.reply_text(f"Tushunmadim: {e}\n\n{XABAR_YORDAM}")
+            return
+
+        yopildimi = db.qarzni_yopish(user_id, ism)
+        if yopildimi:
+            await update.message.reply_text(f"✅ '{ism}' bilan bog'liq qarz yopildi (to'landi deb belgilandi).")
+        else:
+            await update.message.reply_text(f"'{ism}' nomi bilan ochiq qarz topilmadi.")
+        return
+
+    try:
+        yozuv = parse_debt_add(text)
+    except ParseError as e:
+        await update.message.reply_text(f"Tushunmadim: {e}\n\n{XABAR_YORDAM}")
+        return
+
+    sana = bugungi_sana()
+    db.add_debt(user_id, yozuv.tur, yozuv.ism, yozuv.summa, sana, yozuv.muddat)
+
+    tur_matni = "sizga qarzdor bo'ldi" if yozuv.tur == "mendan_qarzdor" else "siz qarzdor bo'ldingiz"
+    muddat_matni = f", muddat: {yozuv.muddat}" if yozuv.muddat else ""
+    await update.message.reply_text(
+        f"✅ Qarz qo'shildi: {yozuv.ism} — {tur_matni}: {summani_formatlash(yozuv.summa)} so'm{muddat_matni}"
+    )
+
+
 async def matn_qabul_qilish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     text = update.message.text
+
+    if qarz_xabarimi(text):
+        await qarz_xabarini_qayta_ishlash(update, user_id, text)
+        return
 
     try:
         yozuv = parse_entry(text)

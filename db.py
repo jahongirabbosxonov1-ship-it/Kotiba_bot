@@ -103,3 +103,27 @@ def get_debts(user_id: int, tur: str, faqat_tolanmagan: bool = True):
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+
+def add_debt(user_id: int, tur: str, ism: str, summa: float, sana_berilgan: str, muddat: str | None) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO debts (user_id, tur, ism, summa, sana_berilgan, muddat) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, tur, ism, summa, sana_berilgan, muddat),
+        )
+        return cur.lastrowid
+
+
+def qarzni_yopish(user_id: int, ism: str) -> bool:
+    """Berilgan ism bilan bog'liq eng oxirgi ochiq (tolanmagan) qarzni topib yopadi.
+    Yopilgan bo'lsa True, topilmasa False qaytaradi."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM debts WHERE user_id = ? AND holat = 'tolanmagan' AND lower(ism) = lower(?) "
+            "ORDER BY id DESC LIMIT 1",
+            (user_id, ism),
+        ).fetchone()
+        if row is None:
+            return False
+        conn.execute("UPDATE debts SET holat = 'tolangan' WHERE id = ?", (row["id"],))
+        return True
