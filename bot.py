@@ -39,8 +39,36 @@ XABAR_YORDAM = (
     "Misollar:\n"
     "  chiqim 50 ming taksi\n"
     "  kirim 3 million ish haqi\n"
-    "  chiqim 20000 nonushta"
+    "  chiqim 20000 nonushta\n\n"
+    "Boshqa buyruqlar: /balans, /qarzlar, /hisobot, /hisobot <oy_nomi>, /royxat"
 )
+
+OY_NOMLARI = {
+    "yanvar": 1,
+    "fevral": 2,
+    "mart": 3,
+    "aprel": 4,
+    "may": 5,
+    "iyun": 6,
+    "iyul": 7,
+    "avgust": 8,
+    "sentabr": 9,
+    "sentyabr": 9,
+    "oktabr": 10,
+    "oktyabr": 10,
+    "noyabr": 11,
+    "dekabr": 12,
+}
+
+
+def oy_oraligi(yil: int, oy: int) -> tuple[str, str]:
+    """[boshlanish, tugash) — sana_gacha shu sanani o'z ichiga olmaydi."""
+    boshlanish = f"{yil:04d}-{oy:02d}-01"
+    if oy == 12:
+        tugash = f"{yil + 1:04d}-01-01"
+    else:
+        tugash = f"{yil:04d}-{oy + 1:02d}-01"
+    return boshlanish, tugash
 
 
 def bugungi_sana() -> str:
@@ -76,6 +104,64 @@ async def royxat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(qatorlar))
 
 
+async def balans(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    jami_kirim, jami_chiqim = db.get_totals(user_id)
+    joriy_balans = jami_kirim - jami_chiqim
+    await update.message.reply_text(f"💰 Joriy balans: {summani_formatlash(joriy_balans)} so'm")
+
+
+async def qarzlar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    mendan_qarzdorlar = db.get_debts(user_id, "mendan_qarzdor")
+    men_qarzdor_bolgan = db.get_debts(user_id, "men_qarzdorman")
+
+    def qatorga_aylantirish(yozuvlar):
+        if not yozuvlar:
+            return ["  — yo'q —"]
+        natija = []
+        for q in yozuvlar:
+            muddat = f", muddat: {q['muddat']}" if q["muddat"] else ""
+            natija.append(f"  {q['ism']} — {summani_formatlash(q['summa'])} so'm{muddat}")
+        return natija
+
+    qatorlar = ["🤝 Sizga qarzdorlar:"]
+    qatorlar += qatorga_aylantirish(mendan_qarzdorlar)
+    qatorlar.append("")
+    qatorlar.append("📌 Siz qarzdor bo'lgan joylar:")
+    qatorlar += qatorga_aylantirish(men_qarzdor_bolgan)
+
+    await update.message.reply_text("\n".join(qatorlar))
+
+
+async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    sarlavha = "barcha vaqt uchun"
+    sana_dan = None
+    sana_gacha = None
+
+    if context.args:
+        oy_nomi = " ".join(context.args).strip().lower()
+        oy_raqami = OY_NOMLARI.get(oy_nomi)
+        if oy_raqami is None:
+            await update.message.reply_text(
+                "Noma'lum oy nomi. Masalan: /hisobot avgust"
+            )
+            return
+        yil = datetime.now(TASHKENT_TZ).year if TASHKENT_TZ else datetime.now().year
+        sana_dan, sana_gacha = oy_oraligi(yil, oy_raqami)
+        sarlavha = f"{oy_nomi} {yil}"
+
+    jami_kirim, jami_chiqim = db.get_totals(user_id=update.effective_user.id, sana_dan=sana_dan, sana_gacha=sana_gacha)
+    sof_balans = jami_kirim - jami_chiqim
+
+    await update.message.reply_text(
+        f"📊 Hisobot ({sarlavha}):\n"
+        f"Jami kirim: {summani_formatlash(jami_kirim)} so'm\n"
+        f"Jami chiqim: {summani_formatlash(jami_chiqim)} so'm\n"
+        f"Sof balans: {summani_formatlash(sof_balans)} so'm"
+    )
+
+
 async def matn_qabul_qilish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     text = update.message.text
@@ -107,6 +193,9 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", yordam))
     application.add_handler(CommandHandler("royxat", royxat))
+    application.add_handler(CommandHandler("balans", balans))
+    application.add_handler(CommandHandler("qarzlar", qarzlar))
+    application.add_handler(CommandHandler("hisobot", hisobot))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, matn_qabul_qilish))
 
     logger.info("Bot ishga tushdi...")
