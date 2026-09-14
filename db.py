@@ -58,6 +58,15 @@ def add_transaction(user_id: int, sana: str, tur: str, summa: float, tavsif: str
         return cur.lastrowid
 
 
+def update_transaction_summa(user_id: int, transaction_id: int, yangi_summa: float) -> bool:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE transactions SET summa = ? WHERE id = ? AND user_id = ?",
+            (yangi_summa, transaction_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
 def get_recent_transactions(user_id: int, limit: int = 5):
     with get_connection() as conn:
         rows = conn.execute(

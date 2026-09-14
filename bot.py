@@ -14,7 +14,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 import db
-from parser import ParseError, parse_debt_add, parse_debt_close, parse_entry, qarz_xabarimi
+from parser import ParseError, parse_debt_add, parse_debt_close, parse_entry, qarz_xabarimi, summani_ajratish
 
 load_dotenv()
 
@@ -43,6 +43,9 @@ XABAR_YORDAM = (
     "  qarz oldim <ism> <summa> [muddat]    — kimdandir qarz oldingiz\n"
     "  qarz yopildi <ism>                   — shu ism bilan ochiq qarzni yopadi\n"
     "Misollar: 'qarz berdim Aliyev 500 ming 2 oydan keyin', 'qarz yopildi Aliyev'\n\n"
+    "✏️ Xato yozuvni tuzatish:\n"
+    "  /tahrirlash <ID> <yangi_summa>   — /royxat'da ko'rsatilgan ID bo'yicha\n"
+    "Misol: /tahrirlash 3 300000\n\n"
     "📊 Boshqa buyruqlar: /balans, /qarzlar, /hisobot, /hisobot <oy_nomi>, /royxat"
 )
 
@@ -100,11 +103,40 @@ async def royxat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     qatorlar = ["Oxirgi yozuvlar:"]
     for y in yozuvlar:
-        belgi = "+" if y["tur"] == "kirim" else "-"
         qatorlar.append(
-            f"#{y['id']} | {y['sana']} | {belgi}{summani_formatlash(y['summa'])} so'm | {y['tavsif']}"
+            f"{y['id']}. {y['tur']} {summani_formatlash(y['summa'])} {y['tavsif']}"
         )
+    qatorlar.append("\nXato bo'lsa: /tahrirlash <ID> <yangi_summa>")
     await update.message.reply_text("\n".join(qatorlar))
+
+
+async def tahrirlash(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = context.args
+    if len(args) < 2 or not args[0].isdigit():
+        await update.message.reply_text(
+            "Format: /tahrirlash <ID> <yangi_summa>\nMasalan: /tahrirlash 3 300000"
+        )
+        return
+
+    transaction_id = int(args[0])
+    try:
+        yangi_summa, _ = summani_ajratish(args[1:])
+    except ParseError:
+        await update.message.reply_text(
+            "Summa noto'g'ri. Masalan: /tahrirlash 3 300000"
+        )
+        return
+
+    user_id = update.effective_user.id
+    muvaffaqiyatli = db.update_transaction_summa(user_id, transaction_id, yangi_summa)
+
+    if not muvaffaqiyatli:
+        await update.message.reply_text("Bunday raqamli yozuv topilmadi.")
+        return
+
+    await update.message.reply_text(
+        f"✅ {transaction_id}-yozuv {summani_formatlash(yangi_summa)} so'mga tuzatildi."
+    )
 
 
 async def balans(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -237,6 +269,7 @@ def main() -> None:
     application.add_handler(CommandHandler("balans", balans))
     application.add_handler(CommandHandler("qarzlar", qarzlar))
     application.add_handler(CommandHandler("hisobot", hisobot))
+    application.add_handler(CommandHandler("tahrirlash", tahrirlash))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, matn_qabul_qilish))
 
     logger.info("Bot ishga tushdi...")

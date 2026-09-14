@@ -47,7 +47,7 @@ def _sonmi(token: str) -> bool:
     return bool(SON_REGEX.match(token.replace(" ", "")))
 
 
-def _summani_ajratish(tokens: list[str]) -> tuple[float, list[str]]:
+def summani_ajratish(tokens: list[str]) -> tuple[float, list[str]]:
     """tokens boshida summa (va ixtiyoriy ko'paytiruvchi/birlik) bo'lishi kerak.
     (summa, qolgan_tokenlar) qaytaradi yoki ParseError ko'taradi."""
     if not tokens or not _sonmi(tokens[0]):
@@ -77,7 +77,7 @@ def parse_entry(text: str) -> ParsedEntry:
         raise ParseError(f"Noma'lum tur: '{tokens[0]}'. 'kirim' yoki 'chiqim' bilan boshlang.")
 
     try:
-        summa, qolgan = _summani_ajratish(tokens[1:])
+        summa, qolgan = summani_ajratish(tokens[1:])
     except ParseError:
         raise ParseError("Summa topilmadi. Masalan: 'chiqim 50 ming taksi'")
 
@@ -105,7 +105,7 @@ def parse_debt_add(text: str) -> ParsedDebt:
     ism = tokens[2]
 
     try:
-        summa, qolgan = _summani_ajratish(tokens[3:])
+        summa, qolgan = summani_ajratish(tokens[3:])
     except ParseError:
         raise ParseError("Summa topilmadi. Masalan: 'qarz berdim Aliyev 500 ming 2 oydan keyin'")
 
